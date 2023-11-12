@@ -15,22 +15,22 @@ fn main() {
 
     println!("=== INDEX TO WORKDIR ===");
 
-    for status in d.iter().filter(|st| st.index_to_workdir().is_some()) {
+    for status in d.iter().filter_map(|st| st.index_to_workdir()) {
         println!(
             "{:?} -> {:?} [{:?}]",
-            status.index_to_workdir().unwrap().old_file().path(),
-            status.index_to_workdir().unwrap().new_file().path(),
+            status.old_file().path(),
+            status.new_file().path(),
             status.status(),
         );
     }
 
     println!("=== HEAD TO INDEX ===");
 
-    for status in d.iter().filter(|st| st.head_to_index().is_some()) {
+    for status in d.iter().filter_map(|st| st.head_to_index()) {
         println!(
             "{:?} -> {:?} [{:?}]",
-            status.head_to_index().unwrap().old_file().path(),
-            status.head_to_index().unwrap().new_file().path(),
+            status.old_file().path(),
+            status.new_file().path(),
             status.status(),
         );
     }
