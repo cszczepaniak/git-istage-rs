@@ -7,3 +7,6 @@ edition = "2021"
 
 [dependencies]
 git2 = "0.18.1"
+tui = "0.19"
+crossterm = "0.25"
+anyhow = "1"
