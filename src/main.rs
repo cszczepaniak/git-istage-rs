@@ -6,11 +6,13 @@ fn main() {
     let repo = git2::Repository::open(".").unwrap();
     let statuses = repo
         .statuses(Some(
-            StatusOptions::default().renames_index_to_workdir(true),
+            StatusOptions::default()
+                .renames_index_to_workdir(true)
+                .include_untracked(true),
         ))
         .unwrap();
 
     for status in statuses.iter() {
-        println!("{:?}", status.path())
+        println!("{:?}, {:?}", status.path(), status.status())
     }
 }
