@@ -174,9 +174,19 @@ fn run_app<B: Backend>(
                             continue;
                         }
                         if let Some(item) = app.unstaged_files.current() {
-                            item.add_to_git()?;
+                            item.stage_to_index()?;
                             app.unstaged_files
                                 .set_items(get_file_statuses(git::FileStatusKind::Unstaged)?);
+                        }
+                    }
+                    KeyCode::Char('u') => {
+                        if let AppViewState::UnstagedFiles = app.view_state {
+                            continue;
+                        }
+                        if let Some(item) = app.staged_files.current() {
+                            item.unstage_to_workdir()?;
+                            app.staged_files
+                                .set_items(get_file_statuses(git::FileStatusKind::Staged)?);
                         }
                     }
                     KeyCode::Char('t') => match app.view_state {

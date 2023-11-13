@@ -40,13 +40,31 @@ impl StatusEntry {
         }
     }
 
-    pub fn add_to_git(&self) -> anyhow::Result<()> {
+    pub fn stage_to_index(&self) -> anyhow::Result<()> {
         let mut cmd = process::Command::new("git");
         cmd.arg("add");
 
+        // Assumption: this StatusEntry was obtained by compaing the index to the working directory.
         match self.status {
             Status::Renamed => cmd.args([&self.old_file, &self.new_file]),
             _ => cmd.arg(&self.new_file),
+        };
+
+        cmd.output()?;
+        Ok(())
+    }
+
+    pub fn unstage_to_workdir(&self) -> anyhow::Result<()> {
+        let mut cmd = process::Command::new("git");
+
+        // Assumption: this StatusEntry was obtained by comparing HEAD to the index.
+        match self.status {
+            Status::Deleted => {
+                cmd.arg("restore").arg("--staged").arg(&self.new_file);
+            }
+            _ => {
+                cmd.arg("reset").arg(&self.new_file);
+            }
         };
 
         cmd.output()?;
