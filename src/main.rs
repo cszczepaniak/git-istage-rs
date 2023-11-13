@@ -21,17 +21,18 @@ use git::get_file_statuses;
 use status::StatusEntry;
 
 fn main() -> anyhow::Result<()> {
+    let tick_rate = Duration::from_millis(250);
+    let app = App::new(
+        get_file_statuses(git::FileStatusKind::Unstaged)?,
+        get_file_statuses(git::FileStatusKind::Staged)?,
+    );
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let tick_rate = Duration::from_millis(250);
-    let app = App::new(
-        get_file_statuses(git::FileStatusKind::Unstaged)?,
-        get_file_statuses(git::FileStatusKind::Staged)?,
-    );
     let res = run_app(&mut terminal, app, tick_rate);
 
     disable_raw_mode()?;
