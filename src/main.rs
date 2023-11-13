@@ -1,5 +1,5 @@
-use std::ffi::OsStr;
-use std::process;
+mod status;
+
 use std::time::Instant;
 use std::{io, time::Duration};
 
@@ -8,7 +8,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use git2::{Delta, StatusOptions};
+use git2::StatusOptions;
 use tui::{
     backend::{Backend, CrosstermBackend},
     style::{Color, Modifier, Style},
@@ -17,101 +17,7 @@ use tui::{
     Frame, Terminal,
 };
 
-#[derive(Clone, Copy)]
-enum Status {
-    Unmodified,
-    Added,
-    Deleted,
-    Modified,
-    Renamed,
-    Copied,
-    Ignored,
-    Untracked,
-    Conflicted,
-    Typechange,
-    Unreadable,
-}
-
-impl From<Delta> for Status {
-    fn from(value: Delta) -> Self {
-        match value {
-            Delta::Unmodified => Status::Unmodified,
-            Delta::Added => Status::Added,
-            Delta::Deleted => Status::Deleted,
-            Delta::Modified => Status::Modified,
-            Delta::Renamed => Status::Renamed,
-            Delta::Copied => Status::Copied,
-            Delta::Ignored => Status::Ignored,
-            Delta::Untracked => Status::Untracked,
-            Delta::Typechange => Status::Typechange,
-            Delta::Unreadable => Status::Unreadable,
-            Delta::Conflicted => Status::Conflicted,
-        }
-    }
-}
-
-impl From<Status> for char {
-    fn from(value: Status) -> Self {
-        match value {
-            Status::Unmodified => ' ',
-            Status::Added => 'A',
-            Status::Deleted => 'D',
-            Status::Modified => 'M',
-            Status::Renamed => 'R',
-            Status::Copied => 'C',
-            Status::Ignored => '!',
-            Status::Untracked => 'U',
-            Status::Conflicted => 'X',
-            Status::Typechange => todo!(),
-            Status::Unreadable => todo!(),
-        }
-    }
-}
-
-impl From<Status> for Color {
-    fn from(value: Status) -> Self {
-        match value {
-            Status::Unmodified => Color::White,
-            Status::Added => Color::LightGreen,
-            Status::Deleted => Color::Red,
-            Status::Modified => Color::Yellow,
-            Status::Renamed => Color::Cyan,
-            Status::Copied => Color::LightBlue,
-            Status::Ignored => Color::Gray,
-            Status::Untracked => Color::Green,
-            Status::Conflicted => Color::LightRed,
-            Status::Typechange => todo!(),
-            Status::Unreadable => todo!(),
-        }
-    }
-}
-
-struct StatusEntry {
-    old_file: String,
-    new_file: String,
-    status: Status,
-}
-
-impl StatusEntry {
-    fn pretty_string(&self) -> String {
-        match self.status {
-            Status::Renamed => format!(
-                "{} {} -> {}",
-                char::from(self.status),
-                self.old_file,
-                self.new_file
-            ),
-            _ => format!("{} {}", char::from(self.status), self.new_file),
-        }
-    }
-
-    fn add_to_git(&self) -> anyhow::Result<()> {
-        match self.status {
-            Status::Renamed => add_to_git([&self.old_file, &self.new_file]),
-            _ => add_to_git([&self.new_file]),
-        }
-    }
-}
+use status::StatusEntry;
 
 fn main() -> anyhow::Result<()> {
     enable_raw_mode()?;
@@ -289,30 +195,6 @@ fn get_file_statuses() -> anyhow::Result<Vec<StatusEntry>> {
 
     Ok(d.iter()
         .filter_map(|st| st.index_to_workdir())
-        .map(|st| StatusEntry {
-            old_file: st
-                .old_file()
-                .path()
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            new_file: st
-                .new_file()
-                .path()
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            status: st.status().into(),
-        })
+        .map(StatusEntry::from)
         .collect())
-}
-
-fn add_to_git<I, S>(paths: I) -> anyhow::Result<()>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    process::Command::new("git")
-        .arg("add")
-        .args(paths)
-        .output()?;
-    Ok(())
 }
