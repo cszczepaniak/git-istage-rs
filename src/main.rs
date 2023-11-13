@@ -1,3 +1,4 @@
+mod git;
 mod status;
 
 use std::time::Instant;
@@ -8,7 +9,6 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use git2::StatusOptions;
 use tui::{
     backend::{Backend, CrosstermBackend},
     style::{Color, Modifier, Style},
@@ -17,6 +17,7 @@ use tui::{
     Frame, Terminal,
 };
 
+use git::get_file_statuses;
 use status::StatusEntry;
 
 fn main() -> anyhow::Result<()> {
@@ -27,7 +28,10 @@ fn main() -> anyhow::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let tick_rate = Duration::from_millis(250);
-    let app = App::new(get_file_statuses()?);
+    let app = App::new(
+        get_file_statuses(git::FileStatusKind::Unstaged)?,
+        get_file_statuses(git::FileStatusKind::Staged)?,
+    );
     let res = run_app(&mut terminal, app, tick_rate);
 
     disable_raw_mode()?;
@@ -111,15 +115,40 @@ impl<T> StatefulList<T> {
     }
 }
 
+enum AppViewState {
+    UnstagedFiles,
+    StagedFiles,
+}
+
 struct App {
-    items: StatefulList<StatusEntry>,
+    view_state: AppViewState,
+    unstaged_files: StatefulList<StatusEntry>,
+    staged_files: StatefulList<StatusEntry>,
 }
 
 impl App {
-    fn new(items: Vec<StatusEntry>) -> App {
+    fn new(unstaged_files: Vec<StatusEntry>, staged_files: Vec<StatusEntry>) -> App {
         App {
-            items: StatefulList::with_items(items),
+            view_state: AppViewState::UnstagedFiles,
+            unstaged_files: StatefulList::with_items(unstaged_files),
+            staged_files: StatefulList::with_items(staged_files),
         }
+    }
+
+    fn curr_file_list(&mut self) -> &mut StatefulList<StatusEntry> {
+        match self.view_state {
+            AppViewState::UnstagedFiles => &mut self.unstaged_files,
+            AppViewState::StagedFiles => &mut self.staged_files,
+        }
+    }
+
+    fn change_view_state<F>(&mut self, next: AppViewState, mut on_enter: F) -> anyhow::Result<()>
+    where
+        F: FnMut(&mut App) -> anyhow::Result<()>,
+    {
+        on_enter(self)?;
+        self.view_state = next;
+        Ok(())
     }
 }
 
@@ -141,14 +170,34 @@ fn run_app<B: Backend>(
                 match key.code {
                     KeyCode::Char('q') => return Ok(()),
                     KeyCode::Char('s') => {
-                        if let Some(item) = app.items.current() {
+                        if let AppViewState::StagedFiles = app.view_state {
+                            continue;
+                        }
+                        if let Some(item) = app.unstaged_files.current() {
                             item.add_to_git()?;
-                            app.items.set_items(get_file_statuses()?);
+                            app.unstaged_files
+                                .set_items(get_file_statuses(git::FileStatusKind::Unstaged)?);
                         }
                     }
-                    KeyCode::Down => app.items.next(),
-                    KeyCode::Up => app.items.previous(),
-                    KeyCode::Left => app.items.unselect(),
+                    KeyCode::Char('t') => match app.view_state {
+                        AppViewState::UnstagedFiles => {
+                            app.change_view_state(AppViewState::StagedFiles, |app| {
+                                app.staged_files
+                                    .set_items(get_file_statuses(git::FileStatusKind::Staged)?);
+                                Ok(())
+                            })?
+                        }
+                        AppViewState::StagedFiles => {
+                            app.change_view_state(AppViewState::UnstagedFiles, |app| {
+                                app.unstaged_files
+                                    .set_items(get_file_statuses(git::FileStatusKind::Unstaged)?);
+                                Ok(())
+                            })?
+                        }
+                    },
+                    KeyCode::Down => app.curr_file_list().next(),
+                    KeyCode::Up => app.curr_file_list().previous(),
+                    KeyCode::Left => app.curr_file_list().unselect(),
                     _ => {}
                 }
             }
@@ -161,9 +210,15 @@ fn run_app<B: Backend>(
 }
 
 fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
+    match app.view_state {
+        AppViewState::UnstagedFiles => files_view(f, &mut app.unstaged_files),
+        AppViewState::StagedFiles => files_view(f, &mut app.staged_files),
+    }
+}
+
+fn files_view<B: Backend>(f: &mut Frame<B>, input: &mut StatefulList<StatusEntry>) {
     let size = f.size();
-    let items: Vec<ListItem> = app
-        .items
+    let items: Vec<ListItem> = input
         .items
         .iter()
         .map(|s| {
@@ -181,20 +236,5 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             .add_modifier(Modifier::BOLD),
     );
 
-    f.render_stateful_widget(list, size, &mut app.items.state);
-}
-
-fn get_file_statuses() -> anyhow::Result<Vec<StatusEntry>> {
-    let repo = git2::Repository::open(".")?;
-    let d = repo.statuses(Some(
-        StatusOptions::default()
-            .renames_index_to_workdir(true)
-            .include_untracked(true)
-            .recurse_untracked_dirs(true),
-    ))?;
-
-    Ok(d.iter()
-        .filter_map(|st| st.index_to_workdir())
-        .map(StatusEntry::from)
-        .collect())
+    f.render_stateful_widget(list, size, &mut input.state);
 }
