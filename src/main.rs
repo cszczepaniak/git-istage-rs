@@ -179,6 +179,16 @@ fn run_app<B: Backend>(
                                 .set_items(get_file_statuses(git::FileStatusKind::Unstaged)?);
                         }
                     }
+                    KeyCode::Char('r') => {
+                        if let AppViewState::StagedFiles = app.view_state {
+                            continue;
+                        }
+                        if let Some(item) = app.unstaged_files.current() {
+                            item.reset_from_workdir()?;
+                            app.unstaged_files
+                                .set_items(get_file_statuses(git::FileStatusKind::Unstaged)?);
+                        }
+                    }
                     KeyCode::Char('u') => {
                         if let AppViewState::UnstagedFiles = app.view_state {
                             continue;

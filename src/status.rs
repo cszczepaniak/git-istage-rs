@@ -1,4 +1,4 @@
-use std::process;
+use std::{fs, process};
 
 use git2::{Delta, DiffDelta};
 use tui::style::Color;
@@ -51,6 +51,30 @@ impl StatusEntry {
         };
 
         cmd.output()?;
+        Ok(())
+    }
+
+    pub fn reset_from_workdir(&self) -> anyhow::Result<()> {
+        // Assumption: this StatusEntry was obtained by compaing the index to the working directory.
+        match self.status {
+            Status::Untracked => {
+                fs::remove_file(&self.new_file)?;
+            }
+            Status::Renamed => {
+                fs::remove_file(&self.new_file)?;
+                process::Command::new("git")
+                    .arg("checkout")
+                    .arg(&self.old_file)
+                    .output()?;
+            }
+            _ => {
+                process::Command::new("git")
+                    .arg("checkout")
+                    .arg(&self.new_file)
+                    .output()?;
+            }
+        };
+
         Ok(())
     }
 
