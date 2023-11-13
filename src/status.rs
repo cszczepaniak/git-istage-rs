@@ -1,28 +1,36 @@
-use std::{fs, process};
+use std::{
+    fs,
+    path::{self, PathBuf},
+    process,
+};
 
 use git2::{Delta, DiffDelta};
 use tui::style::Color;
 
 pub struct StatusEntry {
+    repo_root: String,
     pub old_file: String,
     pub new_file: String,
     pub status: Status,
 }
 
-impl<'a> From<DiffDelta<'a>> for StatusEntry {
-    fn from(value: DiffDelta<'a>) -> Self {
+impl<'a> From<(String, DiffDelta<'a>)> for StatusEntry {
+    fn from(value: (String, DiffDelta<'a>)) -> Self {
         Self {
+            repo_root: value.0,
             old_file: value
+                .1
                 .old_file()
                 .path()
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_default(),
             new_file: value
+                .1
                 .new_file()
                 .path()
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_default(),
-            status: value.status().into(),
+            status: value.1.status().into(),
         }
     }
 }
@@ -40,14 +48,22 @@ impl StatusEntry {
         }
     }
 
+    fn abs_path_old(&self) -> PathBuf {
+        path::Path::new(&self.repo_root).join(&self.old_file)
+    }
+
+    fn abs_path_new(&self) -> PathBuf {
+        path::Path::new(&self.repo_root).join(&self.new_file)
+    }
+
     pub fn stage_to_index(&self) -> anyhow::Result<()> {
         let mut cmd = process::Command::new("git");
         cmd.arg("add");
 
         // Assumption: this StatusEntry was obtained by compaing the index to the working directory.
         match self.status {
-            Status::Renamed => cmd.args([&self.old_file, &self.new_file]),
-            _ => cmd.arg(&self.new_file),
+            Status::Renamed => cmd.args([self.abs_path_old(), self.abs_path_new()]),
+            _ => cmd.arg(&self.abs_path_new()),
         };
 
         cmd.output()?;
@@ -58,19 +74,19 @@ impl StatusEntry {
         // Assumption: this StatusEntry was obtained by compaing the index to the working directory.
         match self.status {
             Status::Untracked => {
-                fs::remove_file(&self.new_file)?;
+                fs::remove_file(self.abs_path_new())?;
             }
             Status::Renamed => {
-                fs::remove_file(&self.new_file)?;
+                fs::remove_file(self.abs_path_new())?;
                 process::Command::new("git")
                     .arg("checkout")
-                    .arg(&self.old_file)
+                    .arg(self.abs_path_old())
                     .output()?;
             }
             _ => {
                 process::Command::new("git")
                     .arg("checkout")
-                    .arg(&self.new_file)
+                    .arg(self.abs_path_new())
                     .output()?;
             }
         };
@@ -84,10 +100,10 @@ impl StatusEntry {
         // Assumption: this StatusEntry was obtained by comparing HEAD to the index.
         match self.status {
             Status::Deleted => {
-                cmd.arg("restore").arg("--staged").arg(&self.new_file);
+                cmd.arg("restore").arg("--staged").arg(self.abs_path_new());
             }
             _ => {
-                cmd.arg("reset").arg(&self.new_file);
+                cmd.arg("reset").arg(self.abs_path_new());
             }
         };
 
